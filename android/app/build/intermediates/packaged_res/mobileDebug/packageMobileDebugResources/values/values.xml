@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">VIP影视</string>
+    <style name="Theme.VipVideo" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+    <style name="Theme.VipVideo.Player" parent="Theme.VipVideo">
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
