@@ -1,1 +1,0 @@
-com.guosen.vipvideo.core
