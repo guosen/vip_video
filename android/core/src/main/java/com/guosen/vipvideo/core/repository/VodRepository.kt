@@ -5,6 +5,7 @@ import com.guosen.vipvideo.core.model.SuggestItem
 import com.guosen.vipvideo.core.model.VodItem
 import com.guosen.vipvideo.core.model.VodType
 import com.guosen.vipvideo.core.network.NetworkModule
+import com.guosen.vipvideo.core.network.VodApiConfig
 import com.guosen.vipvideo.core.util.EpisodeParser
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -24,19 +25,29 @@ class VodRepository(
         30 to "日韩动漫",
     )
 
+    /** 首页每个横滑分区拉取的页数（每页最多 [VodApiConfig.LIST_PAGE_SIZE] 条） */
+    private val homeSectionPages = 3
+
+    /** 首页「最近更新」拉取页数（全站 list，不按 24h 过滤） */
+    private val homeLatestPages = 4
+
     suspend fun loadHome(forceRefresh: Boolean = false): HomeFeed {
         if (!forceRefresh) {
             HomeFeedCache.getFresh()?.let { return it }
         }
         val feed = coroutineScope {
             val latestDeferred = async {
-                enrichPosters(api.list(page = 1, hours = 24).list)
+                enrichPosters(listPages(typeId = null, pages = homeLatestPages, hours = null))
             }
             val categories = featuredSections.map { (typeId, title) ->
                 async {
                     val response = api.list(typeId = typeId, page = 1)
                     val name = response.`class`?.find { it.typeId == typeId }?.typeName ?: title
-                    HomeCategory(typeId, name, enrichPosters(response.list))
+                    HomeCategory(
+                        typeId,
+                        name,
+                        enrichPosters(listPages(typeId = typeId, pages = homeSectionPages)),
+                    )
                 }
             }.map { it.await() }.filter { it.items.isNotEmpty() }
 
@@ -66,14 +77,16 @@ class VodRepository(
         val trimmed = keyword.trim()
         if (trimmed.length < 2) return emptyList<VodItem>() to 0
         val suggests = suggest(trimmed)
-        val items = suggests.map { it.toVodItem() }
+        val items = enrichPosters(suggests.map { it.toVodItem() })
         return items to 1
     }
 
     suspend fun suggest(keyword: String): List<SuggestItem> {
         val trimmed = keyword.trim()
         if (trimmed.length < 2) return emptyList()
-        return runCatching { api.suggest(keyword = trimmed).list }.getOrDefault(emptyList())
+        return runCatching {
+            api.suggest(keyword = trimmed, limit = VodApiConfig.SUGGEST_MAX_LIMIT).list
+        }.getOrDefault(emptyList())
     }
 
     suspend fun detail(id: Int): VodItem? {
@@ -87,6 +100,22 @@ class VodRepository(
         val response = api.list(page = page, hours = 24)
         val pageCount = response.pageCount?.toIntOrNull() ?: 1
         return enrichPosters(response.list) to pageCount
+    }
+
+    private suspend fun listPages(
+        typeId: Int?,
+        pages: Int,
+        hours: Int? = null,
+    ): List<VodItem> {
+        if (pages <= 0) return emptyList()
+        val merged = LinkedHashMap<Int, VodItem>()
+        for (page in 1..pages) {
+            val chunk = api.list(typeId = typeId, page = page, hours = hours).list
+            if (chunk.isEmpty()) break
+            chunk.forEach { merged.putIfAbsent(it.idResolved, it) }
+            if (chunk.size < VodApiConfig.LIST_PAGE_SIZE) break
+        }
+        return merged.values.toList()
     }
 
     private suspend fun enrichPosters(items: List<VodItem>): List<VodItem> {

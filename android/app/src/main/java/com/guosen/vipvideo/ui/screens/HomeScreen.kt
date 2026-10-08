@@ -71,7 +71,7 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     )
-                    SectionHeader("今日更新")
+                    SectionHeader("最近更新")
                 }
                 item {
                     LazyRow(contentPadding = PaddingValues(horizontal = 8.dp)) {
