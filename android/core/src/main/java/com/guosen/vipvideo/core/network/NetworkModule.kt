@@ -7,6 +7,9 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
 
+private const val MOBILE_CHROME_UA =
+    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
 object NetworkModule {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -27,6 +30,25 @@ object NetworkModule {
             }
             .build()
     }
+
+    /** Fetches VIP share pages (Tencent / iQIYI HTML titles). */
+    val pageClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .addInterceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("User-Agent", MOBILE_CHROME_UA)
+                        .header("Accept", "text/html,application/xhtml+xml")
+                        .build(),
+                )
+            }
+            .build()
+    }
+
+    val webViewUserAgent: String get() = MOBILE_CHROME_UA
 
     val vodApi: VodApi by lazy {
         Retrofit.Builder()

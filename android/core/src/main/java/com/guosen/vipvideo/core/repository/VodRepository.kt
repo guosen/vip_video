@@ -4,11 +4,16 @@ import com.guosen.vipvideo.core.model.HomeCategory
 import com.guosen.vipvideo.core.model.SuggestItem
 import com.guosen.vipvideo.core.model.VodItem
 import com.guosen.vipvideo.core.model.VodType
+import com.guosen.vipvideo.core.link.LinkResolveResult
+import com.guosen.vipvideo.core.link.VideoLinkResolver
 import com.guosen.vipvideo.core.network.NetworkModule
 import com.guosen.vipvideo.core.network.VodApiConfig
 import com.guosen.vipvideo.core.util.EpisodeParser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 
 class VodRepository(
     private val api: com.guosen.vipvideo.core.network.VodApi = NetworkModule.vodApi,
@@ -95,6 +100,58 @@ class VodRepository(
     }
 
     suspend fun episodes(id: Int) = EpisodeParser.parse(detail(id)?.vodPlayUrl)
+
+    /**
+     * 1) Normalize VIP URL (e.g. m.v.qq.com → v.qq.com/x/cover/cid/vid.html)
+     * 2) Read page title → search 无损云库 → native ExoPlayer when matched
+     * 3) Otherwise fall back to third-party Web parser
+     */
+    suspend fun resolveShareLink(rawUrl: String): LinkResolveResult {
+        val trimmed = rawUrl.trim()
+        if (!trimmed.startsWith("http")) {
+            return LinkResolveResult.Failed("链接必须以 http 开头")
+        }
+        val normalized = VideoLinkResolver.normalizePageUrl(trimmed)
+        val pageTitle = fetchPageTitle(normalized)
+        val keyword = VideoLinkResolver.cleanTitle(pageTitle)
+        val episodeNum = VideoLinkResolver.episodeFromTitle(pageTitle)
+
+        if (keyword.length >= 2) {
+            val candidates = suggest(keyword)
+            val match = candidates.firstOrNull { it.name == keyword }
+                ?: candidates.firstOrNull { it.name.contains(keyword) || keyword.contains(it.name) }
+                ?: candidates.firstOrNull()
+            if (match != null) {
+                val detail = detail(match.id)
+                if (detail != null) {
+                    val episodes = EpisodeParser.parse(detail.vodPlayUrl)
+                    val index = when {
+                        episodeNum <= 0 -> 0
+                        episodeNum <= episodes.size -> episodeNum - 1
+                        else -> 0
+                    }
+                    return LinkResolveResult.NativePlay(detail, index)
+                }
+            }
+        }
+
+        return LinkResolveResult.WebParse(
+            normalizedUrl = normalized,
+            reason = if (keyword.isBlank()) "无法识别片名，已转换为桌面链接并走网页解析" else "资源库未收录「$keyword」，已走网页解析",
+        )
+    }
+
+    private suspend fun fetchPageTitle(url: String): String = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder().url(url).get().build()
+            NetworkModule.pageClient.newCall(request).execute().use { response ->
+                val html = response.body?.string().orEmpty()
+                Regex("""property="og:title"\s+content="([^"]+)"""").find(html)?.groupValues?.get(1)
+                    ?: Regex("""<title>([^<]+)</title>""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+                    .orEmpty()
+            }
+        }.getOrDefault("")
+    }
 
     suspend fun latestUpdates(page: Int = 1): Pair<List<VodItem>, Int> {
         val response = api.list(page = page, hours = 24)
