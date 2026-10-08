@@ -112,7 +112,7 @@ class VodRepository(
             return LinkResolveResult.Failed("链接必须以 http 开头")
         }
         val normalized = VideoLinkResolver.normalizePageUrl(trimmed)
-        val pageTitle = fetchPageTitle(normalized)
+        val pageTitle = fetchPageTitleForShareLink(trimmed, normalized)
         val keyword = VideoLinkResolver.cleanTitle(pageTitle)
         val episodeNum = VideoLinkResolver.episodeFromTitle(pageTitle)
 
@@ -135,22 +135,65 @@ class VodRepository(
             }
         }
 
+        val webUrl = pickWebParseUrl(trimmed, normalized)
         return LinkResolveResult.WebParse(
-            normalizedUrl = normalized,
-            reason = if (keyword.isBlank()) "无法识别片名，已转换为桌面链接并走网页解析" else "资源库未收录「$keyword」，已走网页解析",
+            normalizedUrl = webUrl,
+            reason = if (keyword.isBlank()) {
+                "无法识别片名，已走网页解析（建议更换解析源）"
+            } else {
+                "资源库未收录「$keyword」，已走网页解析"
+            },
         )
+    }
+
+    private fun pickWebParseUrl(raw: String, normalized: String): String {
+        if (raw.contains("m.v.qq.com", ignoreCase = true)) return raw.trim()
+        return normalized.ifBlank { raw.trim() }
+    }
+
+    private suspend fun fetchPageTitleForShareLink(raw: String, normalized: String): String {
+        val candidates = linkedSetOf<String>()
+        candidates += raw.trim()
+        VideoLinkResolver.buildMobileQqPlayUrl(raw)?.let { candidates += it }
+        if (normalized.isNotBlank()) candidates += normalized
+        for (url in candidates) {
+            val title = fetchPageTitle(url)
+            if (VideoLinkResolver.isUsablePageTitle(title)) return title
+        }
+        return candidates.firstOrNull()?.let { fetchPageTitle(it) }.orEmpty()
     }
 
     private suspend fun fetchPageTitle(url: String): String = withContext(Dispatchers.IO) {
         runCatching {
-            val request = Request.Builder().url(url).get().build()
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("Referer", "https://v.qq.com/")
+                .build()
             NetworkModule.pageClient.newCall(request).execute().use { response ->
-                val html = response.body?.string().orEmpty()
-                Regex("""property="og:title"\s+content="([^"]+)"""").find(html)?.groupValues?.get(1)
-                    ?: Regex("""<title>([^<]+)</title>""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
-                    .orEmpty()
+                if (!response.isSuccessful) return@withContext ""
+                parseTitleFromHtml(response.body?.string().orEmpty())
             }
         }.getOrDefault("")
+    }
+
+    private fun parseTitleFromHtml(html: String): String {
+        Regex("""property=["']og:title["']\s+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.getOrNull(1)
+            ?.let { return decodeHtmlEntities(it) }
+        Regex("""<title>([^<]+)</title>""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.getOrNull(1)
+            ?.let { return decodeHtmlEntities(it) }
+        return ""
+    }
+
+    private fun decodeHtmlEntities(text: String): String {
+        return text
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .trim()
     }
 
     suspend fun latestUpdates(page: Int = 1): Pair<List<VodItem>, Int> {

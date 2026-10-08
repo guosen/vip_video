@@ -22,4 +22,15 @@ class VideoLinkResolverTest {
     fun episodeFromTitleTrailingNumber() {
         assertEquals(1, VideoLinkResolver.episodeFromTitle("【腾讯视频】 楚离 01"))
     }
+
+    @Test
+    fun rejectsGenericTencentTitle() {
+        assertEquals(false, VideoLinkResolver.isUsablePageTitle("腾讯视频"))
+    }
+
+    @Test
+    fun buildMobileQqFromNormalizedStyleUrl() {
+        val raw = "https://m.v.qq.com/x/m/play?vid=y4102o10vcn&cid=mzc00200yxhhqsu"
+        assertEquals(raw, VideoLinkResolver.buildMobileQqPlayUrl(raw))
+    }
 }

@@ -22,17 +22,23 @@ import com.guosen.vipvideo.core.network.NetworkModule
 class ParseWebActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var fullScreenView: FrameLayout
+    private var parserQueue: List<ParseSource> = emptyList()
+    private var parserIndex = 0
+    private lateinit var targetVideoUrl: String
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val targetUrl = VideoLinkResolver.normalizePageUrl(
-            intent.getStringExtra(EXTRA_TARGET_URL).orEmpty(),
-        )
+        val rawTarget = intent.getStringExtra(EXTRA_TARGET_URL).orEmpty()
+        targetVideoUrl = when {
+            rawTarget.contains("m.v.qq.com", ignoreCase = true) -> rawTarget
+            else -> VideoLinkResolver.normalizePageUrl(rawTarget)
+        }
         val parserId = intent.getStringExtra(EXTRA_PARSER_ID)
-        val parser = ParseSources.defaults.find { it.id == parserId && !it.isCloudDirect }
-            ?: ParseSources.defaults.first { !it.isCloudDirect }
-        val loadUrl = buildParseUrl(parser, targetUrl)
+        val preferred = ParseSources.defaults.filter { !it.isCloudDirect }
+        val first = preferred.find { it.id == parserId } ?: preferred.first()
+        parserQueue = listOf(first) + preferred.filter { it.id != first.id }
+        parserIndex = 0
 
         fullScreenView = FrameLayout(this)
         webView = WebView(this).apply {
@@ -55,31 +61,45 @@ class ParseWebActivity : ComponentActivity() {
                         """
                         (function(){
                           var t=(document.body&&document.body.innerText)||'';
-                          if(/解析失败|播放失败|未找到|无效链接/.test(t)){
+                          if(/解析失败|播放失败|无法解析|未找到|无效链接|系统错误/.test(t)){
                             return 'fail';
                           }
                           return 'ok';
                         })();
                         """.trimIndent(),
                     ) { value ->
-                        if (value == "\"fail\"") {
-                            Toast.makeText(
-                                this@ParseWebActivity,
-                                "当前解析源失败，请返回后在「设置」更换解析源重试",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
+                        if (value == "\"fail\"") tryNextParser()
                     }
                 }
             }
-            loadUrl(loadUrl)
         }
         fullScreenView.addView(webView)
         setContentView(fullScreenView)
+        loadCurrentParser()
 
         onBackPressedDispatcher.addCallback(this) {
             if (webView.canGoBack()) webView.goBack() else finish()
         }
+    }
+
+    private fun loadCurrentParser() {
+        val parser = parserQueue.getOrNull(parserIndex) ?: return
+        webView.loadUrl(buildParseUrl(parser, targetVideoUrl))
+    }
+
+    private fun tryNextParser() {
+        if (parserIndex + 1 >= parserQueue.size) {
+            Toast.makeText(
+                this,
+                "全部解析源均失败，请改用「搜索」按片名播放",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        parserIndex += 1
+        val next = parserQueue[parserIndex]
+        Toast.makeText(this, "正在切换解析源：${next.name}", Toast.LENGTH_SHORT).show()
+        loadCurrentParser()
     }
 
     override fun onDestroy() {
