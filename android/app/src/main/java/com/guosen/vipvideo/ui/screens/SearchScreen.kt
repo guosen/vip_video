@@ -23,9 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.guosen.vipvideo.appContainer
-import com.guosen.vipvideo.core.model.SuggestItem
 import com.guosen.vipvideo.core.model.VodItem
 import com.guosen.vipvideo.ui.components.VodPosterCard
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 @Composable
@@ -33,20 +33,30 @@ fun SearchScreen(onOpenDetail: (Int) -> Unit) {
     val repository = LocalContext.current.appContainer().repository
     var query by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
-    var suggests by remember { mutableStateOf<List<SuggestItem>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
     var results by remember { mutableStateOf<List<VodItem>>(emptyList()) }
 
     LaunchedEffect(query) {
         delay(350)
-        if (query.trim().length < 2) {
-            suggests = emptyList()
+        val trimmed = query.trim()
+        if (trimmed.length < 2) {
             results = emptyList()
+            error = null
+            loading = false
             return@LaunchedEffect
         }
         loading = true
-        suggests = repository.suggest(query)
-        results = repository.search(query).first
-        loading = false
+        error = null
+        try {
+            results = repository.search(trimmed).first
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message ?: "搜索失败"
+            results = emptyList()
+        } finally {
+            loading = false
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
@@ -60,23 +70,24 @@ fun SearchScreen(onOpenDetail: (Int) -> Unit) {
         if (loading) {
             CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
         }
-        if (suggests.isNotEmpty() && results.isEmpty()) {
-            Text("联想", modifier = Modifier.padding(top = 12.dp))
-            suggests.take(8).forEach { s ->
-                Text(
-                    text = s.name,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .clickable { onOpenDetail(s.id) },
-                )
-            }
+        error?.let {
+            Text(
+                text = it,
+                modifier = Modifier.padding(top = 8.dp),
+                color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+            )
+        }
+        if (!loading && query.trim().length >= 2 && results.isEmpty() && error == null) {
+            Text("未找到相关结果", modifier = Modifier.padding(top = 12.dp))
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
         ) {
             items(results, key = { it.idResolved }) { item ->
                 VodPosterCard(item = item, onClick = { onOpenDetail(item.idResolved) })

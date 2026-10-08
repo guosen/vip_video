@@ -95,7 +95,7 @@ private fun TvHome(onOpenDetail: (Int) -> Unit) {
     var categories by remember { mutableStateOf<List<HomeCategory>>(emptyList()) }
 
     LaunchedEffect(Unit) {
-        categories = repository.loadHome()
+        categories = repository.loadHome().categories
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {

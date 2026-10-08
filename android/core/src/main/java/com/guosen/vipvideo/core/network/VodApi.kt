@@ -19,7 +19,7 @@ interface VodApi {
     @GET
     suspend fun detail(
         @Url url: String = "${VodApiConfig.API_BASE}?ac=detail",
-        @Query("ids") ids: Int,
+        @Query("ids") ids: String,
     ): VodListResponse
 
     @GET

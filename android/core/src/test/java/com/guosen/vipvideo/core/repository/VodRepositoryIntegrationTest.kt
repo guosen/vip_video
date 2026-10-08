@@ -31,4 +31,12 @@ class VodRepositoryIntegrationTest {
         val suggests = repository.suggest("狗狗")
         assertFalse(suggests.isEmpty())
     }
+
+    @Test
+    fun homeCategoriesHaveItemsAndPosters() = runBlocking {
+        val feed = repository.loadHome(forceRefresh = true)
+        assertFalse(feed.categories.isEmpty())
+        assertTrue(feed.categories.all { it.items.isNotEmpty() })
+        assertTrue(feed.latest.any { !it.poster.isNullOrBlank() })
+    }
 }
