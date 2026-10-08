@@ -39,7 +39,7 @@ cd android
 - `android/app/build/outputs/apk/mobile/debug/app-mobile-debug.apk`
 - `android/app/build/outputs/apk/tv/debug/app-tv-debug.apk`
 
-**预编译手机包（GitHub Releases）**：[VIPVideo-mobile-debug.apk](https://github.com/guosen/vip_video/releases/download/v1.0.0-debug/VIPVideo-mobile-debug.apk)
+**预编译手机包（GitHub Releases）**：[VIPVideo-mobile-debug.apk（v1.0.1-debug）](https://github.com/guosen/vip_video/releases/download/v1.0.1-debug/VIPVideo-mobile-debug.apk)
 
 TV 包使用 `LEANBACK_LAUNCHER`，需在 Android TV 或 TV 模拟器上安装。
 
